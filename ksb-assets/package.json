@@ -1,0 +1,18 @@
+{
+  "name": "ksb-assets",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KSB Assets — ICT Asset Management System",
+  "scripts": {
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "dev": "concurrently -n server,client -c green,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "seed": "cd server && npm run seed",
+    "build": "cd client && npm install && npm run build",
+    "start": "cd server && npm install && node --experimental-sqlite index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
