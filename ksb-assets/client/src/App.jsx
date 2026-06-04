@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import ksbLogo from "./ksb-logo.png";
 
-// ---- tiny API helper ----
+//  API helper 
 const api = {
   token: null,
   async call(path, opts = {}) {
@@ -216,7 +216,9 @@ function Badge({ status }) {
 function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
   const [asset, setAsset] = useState(null);
   const [who, setWho] = useState("");
+  const [newHolder, setNewHolder] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try { setAsset(await api.call("/assets/" + id)); } catch (e) { setErr(e.message); }
@@ -230,7 +232,25 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
     setErr("");
     try {
       await api.call(`/assets/${id}/transition`, { method: "POST", body: JSON.stringify({ to, assignedTo: who }) });
+      setWho("");
       await load(); onChanged();
+    } catch (e) { setErr(e.message); }
+  }
+
+  async function reassign() {
+    setErr(""); setBusy(true);
+    try {
+      await api.call(`/assets/${id}/reassign`, { method: "POST", body: JSON.stringify({ assignedTo: newHolder }) });
+      setNewHolder("");
+      await load(); onChanged();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  async function deleteAsset() {
+    if (!window.confirm(`Delete ${asset.name} (${asset.id}) permanently? This cannot be undone.`)) return;
+    try {
+      await api.call(`/assets/${id}`, { method: "DELETE" });
+      onChanged(); onClose();
     } catch (e) { setErr(e.message); }
   }
 
@@ -256,26 +276,51 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
 
         {!isAdmin ? (
           <div className="readonly-note">You are signed in as a viewer. Status changes require an admin account.</div>
-        ) : opts.length > 0 ? (
-          <div className="action-box">
-            <div className="nav-label" style={{ margin: "0 0 8px" }}>CHANGE STATUS</div>
-            {opts.includes("Assigned") && (
-              <input className="search" style={{ marginBottom: 8 }} placeholder="Assign to (name / location)"
-                value={who} onChange={(e) => setWho(e.target.value)} />
-            )}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {opts.map((s) => (
-                <button key={s} className="trans-btn"
-                  style={{ borderColor: STATE_COLOR[s], color: STATE_COLOR[s] }}
-                  disabled={s === "Assigned" && !who.trim()}
-                  onClick={() => transition(s)}>
-                  &rarr; {s}
-                </button>
-              ))}
-            </div>
-          </div>
         ) : (
-          <div className="readonly-note">This asset is retired. No further transitions are allowed.</div>
+          <>
+            {asset.status === "Assigned" && (
+              <div className="action-box">
+                <div className="nav-label" style={{ margin: "0 0 8px" }}>REASSIGN</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input className="search" style={{ flex: 1, marginBottom: 0 }} placeholder="New holder / location"
+                    value={newHolder} onChange={(e) => setNewHolder(e.target.value)} />
+                  <button className="trans-btn"
+                    style={{ borderColor: STATE_COLOR.Assigned, color: STATE_COLOR.Assigned }}
+                    disabled={!newHolder.trim() || busy}
+                    onClick={reassign}>
+                    Reassign
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {opts.length > 0 ? (
+              <div className="action-box">
+                <div className="nav-label" style={{ margin: "0 0 8px" }}>CHANGE STATUS</div>
+                {opts.includes("Assigned") && (
+                  <input className="search" style={{ marginBottom: 8 }} placeholder="Assign to (name / location)"
+                    value={who} onChange={(e) => setWho(e.target.value)} />
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {opts.map((s) => (
+                    <button key={s} className="trans-btn"
+                      style={{ borderColor: STATE_COLOR[s], color: STATE_COLOR[s] }}
+                      disabled={s === "Assigned" && !who.trim()}
+                      onClick={() => transition(s)}>
+                      &rarr; {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="readonly-note">This asset is retired. No further transitions are allowed.</div>
+            )}
+
+            <button onClick={deleteAsset}
+              style={{ marginTop: 16, width: "100%", padding: "8px 0", background: "#fff", border: "1px solid #e53e3e", color: "#e53e3e", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+              Delete Asset
+            </button>
+          </>
         )}
 
         <div className="nav-label">AUDIT TRAIL</div>
