@@ -289,10 +289,11 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
 
   async function deleteAsset() {
     if (!window.confirm(`Delete ${asset.name} (${asset.id}) permanently? This cannot be undone.`)) return;
+    setBusy(true); setErr("");
     try {
       await api.call(`/assets/${id}`, { method: "DELETE" });
       onChanged(); onClose();
-    } catch (e) { setErr(e.message); }
+    } catch (e) { setErr("Delete failed: " + e.message); } finally { setBusy(false); }
   }
 
   return (

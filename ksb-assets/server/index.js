@@ -125,7 +125,12 @@ app.patch("/api/assets/:id", auth, requireAdmin, (req, res) => {
 app.delete("/api/assets/:id", auth, requireAdmin, (req, res) => {
   const a = getAsset(req.params.id);
   if (!a) return res.status(404).json({ error: "Not found" });
-  db.prepare("DELETE FROM assets WHERE id = ?").run(req.params.id);
+  db.exec("BEGIN");
+  try {
+    db.prepare("DELETE FROM audit_log WHERE asset_id = ?").run(req.params.id);
+    db.prepare("DELETE FROM assets WHERE id = ?").run(req.params.id);
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); return res.status(500).json({ error: String(e) }); }
   res.json({ deleted: req.params.id });
 });
 
