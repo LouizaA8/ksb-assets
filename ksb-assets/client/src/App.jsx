@@ -219,6 +219,8 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
   const [newHolder, setNewHolder] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState(null);
 
   const load = useCallback(async () => {
     try { setAsset(await api.call("/assets/" + id)); } catch (e) { setErr(e.message); }
@@ -227,6 +229,21 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
 
   if (!asset) return null;
   const opts = meta.transitions[asset.status] || [];
+
+  function startEdit() {
+    setEditForm({ name: asset.name, category: asset.category, price: asset.price, date: asset.date || "", dept: asset.dept || "", usefulLife: asset.usefulLife });
+    setEditing(true);
+    setErr("");
+  }
+
+  async function saveEdit() {
+    setErr(""); setBusy(true);
+    try {
+      await api.call(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(editForm) });
+      setEditing(false);
+      await load(); onChanged();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
 
   async function transition(to) {
     setErr("");
@@ -262,17 +279,46 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
         <div className="drawer-title">{asset.name}</div>
         <Badge status={asset.status} />
 
-        <div className="kv">
-          <KV k="Category" v={asset.category} />
-          <KV k="Department" v={asset.dept || "\u2014"} />
-          <KV k="Holder / Location" v={asset.assignedTo || "\u2014"} />
-          <KV k="Purchase Price" v={ksh(asset.price)} />
-          <KV k="Purchased" v={asset.date || "\u2014"} />
-          <KV k="Useful Life" v={asset.usefulLife + " yrs"} />
-          <KV k="Current Book Value" v={asset.status === "Retired" ? "\u2014" : ksh(asset.bookValue)} />
-        </div>
+        {editing && editForm ? (
+          <div className="action-box" style={{ marginTop: 12 }}>
+            <div className="nav-label" style={{ margin: "0 0 8px" }}>EDIT DETAILS</div>
+            <label className="fld">Asset name *</label>
+            <input className="txt" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+            <label className="fld">Category</label>
+            <select className="txt" value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+              {meta.categories.map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <label className="fld">Purchase price (KSh)</label>
+            <input className="txt" type="number" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} />
+            <label className="fld">Purchase date</label>
+            <input className="txt" type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} />
+            <label className="fld">Department</label>
+            <input className="txt" value={editForm.dept} onChange={(e) => setEditForm({ ...editForm, dept: e.target.value })} />
+            <label className="fld">Useful life (years)</label>
+            <input className="txt" type="number" min="1" value={editForm.usefulLife} onChange={(e) => setEditForm({ ...editForm, usefulLife: e.target.value })} />
+            {err && <div className="err">{err}</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn-primary" style={{ flex: 1 }} disabled={!editForm.name.trim() || busy} onClick={saveEdit}>
+                {busy ? "Saving\u2026" : "Save Changes"}
+              </button>
+              <button className="trans-btn" style={{ flex: 1 }} onClick={() => { setEditing(false); setErr(""); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="kv">
+            <KV k="Category" v={asset.category} />
+            <KV k="Department" v={asset.dept || "\u2014"} />
+            <KV k="Holder / Location" v={asset.assignedTo || "\u2014"} />
+            <KV k="Purchase Price" v={ksh(asset.price)} />
+            <KV k="Purchased" v={asset.date || "\u2014"} />
+            <KV k="Useful Life" v={asset.usefulLife + " yrs"} />
+            <KV k="Current Book Value" v={asset.status === "Retired" ? "\u2014" : ksh(asset.bookValue)} />
+          </div>
+        )}
 
-        {err && <div className="err">{err}</div>}
+        {err && !editing && <div className="err">{err}</div>}
 
         {!isAdmin ? (
           <div className="readonly-note">You are signed in as a viewer. Status changes require an admin account.</div>
@@ -316,10 +362,16 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
               <div className="readonly-note">This asset is retired. No further transitions are allowed.</div>
             )}
 
-            <button onClick={deleteAsset}
-              style={{ marginTop: 16, width: "100%", padding: "8px 0", background: "#fff", border: "1px solid #e53e3e", color: "#e53e3e", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
-              Delete Asset
-            </button>
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button onClick={startEdit}
+                style={{ flex: 1, padding: "8px 0", background: "#fff", border: "1px solid #3a7bd5", color: "#3a7bd5", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+                Edit Details
+              </button>
+              <button onClick={deleteAsset}
+                style={{ flex: 1, padding: "8px 0", background: "#fff", border: "1px solid #e53e3e", color: "#e53e3e", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+                Delete Asset
+              </button>
+            </div>
           </>
         )}
 

@@ -105,6 +105,23 @@ app.post("/api/assets/:id/transition", auth, requireAdmin, (req, res) => {
   res.json(shape(getAsset(a.id)));
 });
 
+app.patch("/api/assets/:id", auth, requireAdmin, (req, res) => {
+  const a = getAsset(req.params.id);
+  if (!a) return res.status(404).json({ error: "Not found" });
+  const { name, category, price, date, dept, usefulLife } = req.body;
+  if (!name?.trim() || !category?.trim()) return res.status(400).json({ error: "name and category required" });
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      `UPDATE assets SET name=?, category=?, price=?, purchase_date=?, dept=?, useful_life=? WHERE id=?`
+    ).run(name.trim(), category.trim(), Number(price) || 0, date || null, dept || "", Number(usefulLife) || 4, a.id);
+    db.prepare("INSERT INTO audit_log (asset_id, user_id, action, detail) VALUES (?, ?, 'EDITED', ?)")
+      .run(a.id, req.user.id, `Details updated`);
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); return res.status(500).json({ error: String(e) }); }
+  res.json(shape(getAsset(a.id)));
+});
+
 app.delete("/api/assets/:id", auth, requireAdmin, (req, res) => {
   const a = getAsset(req.params.id);
   if (!a) return res.status(404).json({ error: "Not found" });
