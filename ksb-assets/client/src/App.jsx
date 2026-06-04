@@ -109,6 +109,24 @@ function Dashboard({ session, onLogout }) {
     return { total: assets.length, assigned: by("Assigned"), repair: by("In Repair"), value };
   }, [assets]);
 
+  function exportCSV() {
+    const headers = ["ID", "Asset Name", "Category", "Status", "Holder / Location", "Department", "Purchase Price (KSh)", "Purchase Date", "Useful Life (yrs)", "Book Value (KSh)"];
+    const rows = filtered.map((a) => [
+      a.id, a.name, a.category, a.status,
+      a.assignedTo || "", a.dept || "",
+      a.price, a.date || "", a.usefulLife,
+      a.status === "Retired" ? 0 : a.bookValue,
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ksb-assets-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -143,10 +161,16 @@ function Dashboard({ session, onLogout }) {
             <div className="h1">Asset Register</div>
             <div className="sub">More Sugar For Prosperity</div>
           </div>
-          <button className="add-btn" disabled={!isAdmin} onClick={() => setShowAdd(true)}
-            title={isAdmin ? "" : "Viewers cannot add assets"}>
-            + Register Asset
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="add-btn" style={{ background: "#fff", color: "#2f8f3e", border: "1px solid #2f8f3e" }}
+              onClick={exportCSV} title="Export current view as CSV">
+              ↓ Export CSV
+            </button>
+            <button className="add-btn" disabled={!isAdmin} onClick={() => setShowAdd(true)}
+              title={isAdmin ? "" : "Viewers cannot add assets"}>
+              + Register Asset
+            </button>
+          </div>
         </div>
 
         {error && <div className="err">{error}</div>}
