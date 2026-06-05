@@ -109,12 +109,6 @@ function Dashboard({ session, onLogout }) {
     return { total: assets.length, assigned: by("Assigned"), repair: by("In Repair"), value };
   }, [assets]);
 
-  async function wipeAllAssets() {
-    if (!window.confirm("DELETE ALL ASSETS permanently? This cannot be undone.")) return;
-    try { await api.call("/admin/wipe-assets", { method: "POST" }); load(); }
-    catch (e) { setError(e.message); }
-  }
-
   function exportCSV() {
     const headers = ["ID", "Asset Name", "Category", "Status", "Holder / Location", "Department", "Purchase Price (KSh)", "Purchase Date", "Useful Life (yrs)", "Book Value (KSh)"];
     const rows = filtered.map((a) => [
@@ -168,12 +162,6 @@ function Dashboard({ session, onLogout }) {
             <div className="sub">More Sugar For Prosperity</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {isAdmin && (
-              <button className="add-btn" style={{ background: "#fff", color: "#e53e3e", border: "1px solid #e53e3e" }}
-                onClick={wipeAllAssets} title="Delete all assets">
-                ⚠ Wipe All
-              </button>
-            )}
             <button className="add-btn" style={{ background: "#fff", color: "#2f8f3e", border: "1px solid #2f8f3e" }}
               onClick={exportCSV} title="Export current view as CSV">
               ↓ Export CSV
