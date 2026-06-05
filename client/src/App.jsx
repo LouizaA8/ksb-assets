@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import ksbLogo from "./ksb-logo.png";
 
-// ---- tiny API helper ----
+//  API helper 
 const api = {
   token: null,
   async call(path, opts = {}) {
@@ -109,6 +109,30 @@ function Dashboard({ session, onLogout }) {
     return { total: assets.length, assigned: by("Assigned"), repair: by("In Repair"), value };
   }, [assets]);
 
+  async function wipeAllAssets() {
+    if (!window.confirm("DELETE ALL ASSETS permanently? This cannot be undone.")) return;
+    try { await api.call("/admin/wipe-assets", { method: "POST" }); load(); }
+    catch (e) { setError(e.message); }
+  }
+
+  function exportCSV() {
+    const headers = ["ID", "Asset Name", "Category", "Status", "Holder / Location", "Department", "Purchase Price (KSh)", "Purchase Date", "Useful Life (yrs)", "Book Value (KSh)"];
+    const rows = filtered.map((a) => [
+      a.id, a.name, a.category, a.status,
+      a.assignedTo || "", a.dept || "",
+      a.price, a.date || "", a.usefulLife,
+      a.status === "Retired" ? 0 : a.bookValue,
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ksb-assets-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -143,10 +167,22 @@ function Dashboard({ session, onLogout }) {
             <div className="h1">Asset Register</div>
             <div className="sub">More Sugar For Prosperity</div>
           </div>
-          <button className="add-btn" disabled={!isAdmin} onClick={() => setShowAdd(true)}
-            title={isAdmin ? "" : "Viewers cannot add assets"}>
-            + Register Asset
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {isAdmin && (
+              <button className="add-btn" style={{ background: "#fff", color: "#e53e3e", border: "1px solid #e53e3e" }}
+                onClick={wipeAllAssets} title="Delete all assets">
+                ⚠ Wipe All
+              </button>
+            )}
+            <button className="add-btn" style={{ background: "#fff", color: "#2f8f3e", border: "1px solid #2f8f3e" }}
+              onClick={exportCSV} title="Export current view as CSV">
+              ↓ Export CSV
+            </button>
+            <button className="add-btn" disabled={!isAdmin} onClick={() => setShowAdd(true)}
+              title={isAdmin ? "" : "Viewers cannot add assets"}>
+              + Register Asset
+            </button>
+          </div>
         </div>
 
         {error && <div className="err">{error}</div>}
@@ -216,7 +252,11 @@ function Badge({ status }) {
 function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
   const [asset, setAsset] = useState(null);
   const [who, setWho] = useState("");
+  const [newHolder, setNewHolder] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState(null);
 
   const load = useCallback(async () => {
     try { setAsset(await api.call("/assets/" + id)); } catch (e) { setErr(e.message); }
@@ -226,12 +266,46 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
   if (!asset) return null;
   const opts = meta.transitions[asset.status] || [];
 
+  function startEdit() {
+    setEditForm({ name: asset.name, category: asset.category, price: asset.price, date: asset.date || "", dept: asset.dept || "", usefulLife: asset.usefulLife });
+    setEditing(true);
+    setErr("");
+  }
+
+  async function saveEdit() {
+    setErr(""); setBusy(true);
+    try {
+      await api.call(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(editForm) });
+      setEditing(false);
+      await load(); onChanged();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
   async function transition(to) {
     setErr("");
     try {
       await api.call(`/assets/${id}/transition`, { method: "POST", body: JSON.stringify({ to, assignedTo: who }) });
+      setWho("");
       await load(); onChanged();
     } catch (e) { setErr(e.message); }
+  }
+
+  async function reassign() {
+    setErr(""); setBusy(true);
+    try {
+      await api.call(`/assets/${id}/reassign`, { method: "POST", body: JSON.stringify({ assignedTo: newHolder }) });
+      setNewHolder("");
+      await load(); onChanged();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  async function deleteAsset() {
+    if (!window.confirm(`Delete ${asset.name} (${asset.id}) permanently? This cannot be undone.`)) return;
+    setBusy(true); setErr("");
+    try {
+      await api.call(`/assets/${id}`, { method: "DELETE" });
+      onChanged(); onClose();
+    } catch (e) { setErr("Delete failed: " + e.message); } finally { setBusy(false); }
   }
 
   return (
@@ -242,40 +316,100 @@ function Drawer({ id, isAdmin, meta, onClose, onChanged }) {
         <div className="drawer-title">{asset.name}</div>
         <Badge status={asset.status} />
 
-        <div className="kv">
-          <KV k="Category" v={asset.category} />
-          <KV k="Department" v={asset.dept || "\u2014"} />
-          <KV k="Holder / Location" v={asset.assignedTo || "\u2014"} />
-          <KV k="Purchase Price" v={ksh(asset.price)} />
-          <KV k="Purchased" v={asset.date || "\u2014"} />
-          <KV k="Useful Life" v={asset.usefulLife + " yrs"} />
-          <KV k="Current Book Value" v={asset.status === "Retired" ? "\u2014" : ksh(asset.bookValue)} />
-        </div>
-
-        {err && <div className="err">{err}</div>}
-
-        {!isAdmin ? (
-          <div className="readonly-note">You are signed in as a viewer. Status changes require an admin account.</div>
-        ) : opts.length > 0 ? (
-          <div className="action-box">
-            <div className="nav-label" style={{ margin: "0 0 8px" }}>CHANGE STATUS</div>
-            {opts.includes("Assigned") && (
-              <input className="search" style={{ marginBottom: 8 }} placeholder="Assign to (name / location)"
-                value={who} onChange={(e) => setWho(e.target.value)} />
-            )}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {opts.map((s) => (
-                <button key={s} className="trans-btn"
-                  style={{ borderColor: STATE_COLOR[s], color: STATE_COLOR[s] }}
-                  disabled={s === "Assigned" && !who.trim()}
-                  onClick={() => transition(s)}>
-                  &rarr; {s}
-                </button>
-              ))}
+        {editing && editForm ? (
+          <div className="action-box" style={{ marginTop: 12 }}>
+            <div className="nav-label" style={{ margin: "0 0 8px" }}>EDIT DETAILS</div>
+            <label className="fld">Asset name *</label>
+            <input className="txt" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+            <label className="fld">Category</label>
+            <select className="txt" value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+              {meta.categories.map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <label className="fld">Purchase price (KSh)</label>
+            <input className="txt" type="number" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} />
+            <label className="fld">Purchase date</label>
+            <input className="txt" type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} />
+            <label className="fld">Department</label>
+            <input className="txt" value={editForm.dept} onChange={(e) => setEditForm({ ...editForm, dept: e.target.value })} />
+            <label className="fld">Useful life (years)</label>
+            <input className="txt" type="number" min="1" value={editForm.usefulLife} onChange={(e) => setEditForm({ ...editForm, usefulLife: e.target.value })} />
+            {err && <div className="err">{err}</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn-primary" style={{ flex: 1 }} disabled={!editForm.name.trim() || busy} onClick={saveEdit}>
+                {busy ? "Saving\u2026" : "Save Changes"}
+              </button>
+              <button className="trans-btn" style={{ flex: 1 }} onClick={() => { setEditing(false); setErr(""); }}>
+                Cancel
+              </button>
             </div>
           </div>
         ) : (
-          <div className="readonly-note">This asset is retired. No further transitions are allowed.</div>
+          <div className="kv">
+            <KV k="Category" v={asset.category} />
+            <KV k="Department" v={asset.dept || "\u2014"} />
+            <KV k="Holder / Location" v={asset.assignedTo || "\u2014"} />
+            <KV k="Purchase Price" v={ksh(asset.price)} />
+            <KV k="Purchased" v={asset.date || "\u2014"} />
+            <KV k="Useful Life" v={asset.usefulLife + " yrs"} />
+            <KV k="Current Book Value" v={asset.status === "Retired" ? "\u2014" : ksh(asset.bookValue)} />
+          </div>
+        )}
+
+        {err && !editing && <div className="err">{err}</div>}
+
+        {!isAdmin ? (
+          <div className="readonly-note">You are signed in as a viewer. Status changes require an admin account.</div>
+        ) : (
+          <>
+            {asset.status === "Assigned" && (
+              <div className="action-box">
+                <div className="nav-label" style={{ margin: "0 0 8px" }}>REASSIGN</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input className="search" style={{ flex: 1, marginBottom: 0 }} placeholder="New holder / location"
+                    value={newHolder} onChange={(e) => setNewHolder(e.target.value)} />
+                  <button className="trans-btn"
+                    style={{ borderColor: STATE_COLOR.Assigned, color: STATE_COLOR.Assigned }}
+                    disabled={!newHolder.trim() || busy}
+                    onClick={reassign}>
+                    Reassign
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {opts.length > 0 ? (
+              <div className="action-box">
+                <div className="nav-label" style={{ margin: "0 0 8px" }}>CHANGE STATUS</div>
+                {opts.includes("Assigned") && (
+                  <input className="search" style={{ marginBottom: 8 }} placeholder="Assign to (name / location)"
+                    value={who} onChange={(e) => setWho(e.target.value)} />
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {opts.map((s) => (
+                    <button key={s} className="trans-btn"
+                      style={{ borderColor: STATE_COLOR[s], color: STATE_COLOR[s] }}
+                      disabled={s === "Assigned" && !who.trim()}
+                      onClick={() => transition(s)}>
+                      &rarr; {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="readonly-note">This asset is retired. No further transitions are allowed.</div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button onClick={startEdit}
+                style={{ flex: 1, padding: "8px 0", background: "#fff", border: "1px solid #3a7bd5", color: "#3a7bd5", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+                Edit Details
+              </button>
+              <button onClick={deleteAsset}
+                style={{ flex: 1, padding: "8px 0", background: "#fff", border: "1px solid #e53e3e", color: "#e53e3e", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+                Delete Asset
+              </button>
+            </div>
+          </>
         )}
 
         <div className="nav-label">AUDIT TRAIL</div>
