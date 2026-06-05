@@ -1,4 +1,7 @@
 node_modules/
 client/dist/
 server/ksb.db
+server/ksb.db-shm
+server/ksb.db-wal
+server/ksb.sqbpro
 .env
