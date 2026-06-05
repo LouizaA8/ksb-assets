@@ -1,24 +1,16 @@
-// db.js — built-in SQLite (node:sqlite) + schema + domain rules
-// ------------------------------------------------------------
-// Uses Node's built-in SQLite (no native compilation, no deps).
-// Schema is normalised: users, assets, audit_log are separate
-// tables; audit_log has FKs to assets(id) and users(id). Every
-// status change is written inside a TRANSACTION so the asset
-// update and its audit record commit together (ACID) — directly
-// relevant to RCS_432 Database Administration.
-
-import { DatabaseSync } from "node:sqlite";
+import { createClient } from "@libsql/client";
 import { fileURLToPath } from "url";
 import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.NODE_ENV === "production"
-  ? "/var/data/ksb.db"
-  : path.join(__dirname, "ksb.db");
-const db = new DatabaseSync(dbPath);
-db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 
-db.exec(`
+const db = createClient(
+  process.env.TURSO_DATABASE_URL
+    ? { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN || "" }
+    : { url: `file:${path.join(__dirname, "ksb.db")}` }
+);
+
+await db.executeMultiple(`
   CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     username    TEXT UNIQUE NOT NULL,
@@ -44,9 +36,7 @@ db.exec(`
     user_id   INTEGER,
     action    TEXT NOT NULL,
     detail    TEXT NOT NULL,
-    at        TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id)  REFERENCES users(id)
+    at        TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
 
@@ -66,10 +56,11 @@ export function bookValue(price, purchaseDate, usefulLife = 4) {
   return Math.max(0, Math.round(price - annual * years));
 }
 
-export function nextAssetId() {
-  const row = db.prepare(
+export async function nextAssetId() {
+  const result = await db.execute(
     "SELECT id FROM assets WHERE id LIKE 'KSB-%' ORDER BY CAST(SUBSTR(id,5) AS INTEGER) DESC LIMIT 1"
-  ).get();
+  );
+  const row = result.rows[0];
   const n = row ? parseInt(String(row.id).slice(4), 10) : 100;
   return `KSB-${n + 1}`;
 }
