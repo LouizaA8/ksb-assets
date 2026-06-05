@@ -12,7 +12,10 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new DatabaseSync(path.join(__dirname, "ksb.db"));
+const dbPath = process.env.NODE_ENV === "production"
+  ? "/var/data/ksb.db"
+  : path.join(__dirname, "ksb.db");
+const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 
 db.exec(`
