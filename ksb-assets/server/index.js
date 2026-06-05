@@ -105,6 +105,15 @@ app.post("/api/assets/:id/transition", auth, requireAdmin, (req, res) => {
   res.json(shape(getAsset(a.id)));
 });
 
+app.post("/api/admin/wipe-assets", auth, requireAdmin, (req, res) => {
+  db.exec("BEGIN");
+  try {
+    db.exec("DELETE FROM audit_log; DELETE FROM assets;");
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); return res.status(500).json({ error: String(e) }); }
+  res.json({ ok: true, message: "All assets wiped" });
+});
+
 app.patch("/api/assets/:id", auth, requireAdmin, (req, res) => {
   const a = getAsset(req.params.id);
   if (!a) return res.status(404).json({ error: "Not found" });
